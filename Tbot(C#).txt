@@ -1,0 +1,113 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Threading.Tasks;
+using Telegram.Bot;
+using Telegram.Bot.Args;
+using Telegram.Bot.Types.Enums;
+using Telegram.Bot.Types.ReplyMarkups;
+using dotenv.net;
+
+class Program
+{
+    private static readonly Dictionary<string, double> expenses = new Dictionary<string, double>();
+    private static TelegramBotClient botClient;
+
+    static async Task Main()
+    {
+        DotEnv.Load();
+        string token = Environment.GetEnvironmentVariable("TELEGRAM_TOKEN");
+        botClient = new TelegramBotClient(token);
+
+        var me = await botClient.GetMeAsync();
+        Console.WriteLine($"Hello, I am user {me.Id} and my name is {me.FirstName}.");
+
+        botClient.OnMessage += Bot_OnMessage;
+        botClient.OnCallbackQuery += Bot_OnCallbackQuery;
+        botClient.StartReceiving();
+        Console.ReadLine();
+        botClient.StopReceiving();
+    }
+
+    private static async void Bot_OnMessage(object sender, MessageEventArgs e)
+    {
+        if (e.Message.Type != MessageType.Text)
+            return;
+
+        if (e.Message.Text == "/start")
+        {
+            var keyboard = new InlineKeyboardMarkup(new[]
+            {
+                new[] { InlineKeyboardButton.WithCallbackData("Add Expense", "add") },
+                new[] { InlineKeyboardButton.WithCallbackData("Show Expenses", "show") }
+            });
+
+            await botClient.SendTextMessageAsync(
+                chatId: e.Message.Chat,
+                text: "Welcome! Please choose an option:",
+                replyMarkup: keyboard
+            );
+        }
+        else if (e.Message.Text.Contains(" ") && e.Message.Text.Split(' ').Length == 2)
+        {
+            if (e.Message.Chat.Id == long.Parse(e.Message.Chat.Id.ToString()))
+            {
+                var parts = e.Message.Text.Split(' ');
+                if (double.TryParse(parts[0], out double amount))
+                {
+                    var category = parts[1];
+                    if (!expenses.ContainsKey(category))
+                    {
+                        expenses[category] = 0;
+                    }
+                    expenses[category] += amount;
+                    await botClient.SendTextMessageAsync(
+                        chatId: e.Message.Chat,
+                        text: $"Added: {amount} to category {category}"
+                    );
+                }
+                else
+                {
+                    await botClient.SendTextMessageAsync(
+                        chatId: e.Message.Chat,
+                        text: "Please use the format: amount category"
+                    );
+                }
+            }
+        }
+    }
+
+    private static async void Bot_OnCallbackQuery(object sender, CallbackQueryEventArgs e)
+    {
+        var query = e.CallbackQuery;
+        if (query.Data == "add")
+        {
+            await botClient.SendTextMessageAsync(
+                chatId: query.Message.Chat.Id,
+                text: "Please send the expense in the format: amount category"
+            );
+        }
+        else if (query.Data == "show")
+        {
+            if (expenses.Count == 0)
+            {
+                await botClient.SendTextMessageAsync(
+                    chatId: query.Message.Chat.Id,
+                    text: "No expenses recorded."
+                );
+            }
+            else
+            {
+                var message = "Your expenses:\n";
+                foreach (var expense in expenses)
+                {
+                    message += $"{expense.Key}: {expense.Value}\n";
+                }
+                await botClient.SendTextMessageAsync(
+                    chatId: query.Message.Chat.Id,
+                    text: message
+                );
+            }
+        }
+    }
+}
